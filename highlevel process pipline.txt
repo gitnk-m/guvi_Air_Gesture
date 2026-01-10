@@ -1,0 +1,17 @@
+Phone Sensor Stream
+        ↓
+Fetch JSON from phyphox API
+        ↓
+Create Pandas DataFrame
+        ↓
+Generate timestamp index
+        ↓
+Detect flip-down (start index)
+        ↓
+Detect flip-up (end index)
+        ↓
+Trim rows between start & end
+        ↓
+Label digit
+        ↓
+Append to CSV

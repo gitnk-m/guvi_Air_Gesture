@@ -1,0 +1,3 @@
+=> magnetometer
+        As it is given as an optional input, it is not taken duing input data gathering to 
+        reduce the processing load during training 
