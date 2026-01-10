@@ -13,10 +13,10 @@ TIME_STEPS = 150
 VALID_DIGITS = list(range(10))
 CONFIDENCE_THRESHOLD = 0.6
 
-url = "192.168.0.109:8080"
-PHY_PHOX_URL = (
-    f"http://{url}/get?gyrX=full&gyrY=full&gyrZ=full&accX=full&accY=full&accZ=full"
-)
+# url = "192.168.0.109:8080"
+# PHY_PHOX_URL = (
+#     f"http://{api_url}/get?gyrX=full&gyrY=full&gyrZ=full&accX=full&accY=full&accZ=full"
+# )
 SAMPLING_RATE = 100    
 Z_DOWN_THRESHOLD = -7.0
 Z_UP_THRESHOLD = 7.0
@@ -35,7 +35,10 @@ def extract_series(buffer):
 # ==============================
 # FETCH DATA
 # ==============================
-def fetch_phyphox_data():
+def fetch_phyphox_data(api_url):
+    PHY_PHOX_URL = (
+            f"http://{api_url}/get?gyrX=full&gyrY=full&gyrZ=full&accX=full&accY=full&accZ=full"
+        )
     response = requests.get(PHY_PHOX_URL, timeout=10)
     response.raise_for_status()
     return response.json()["buffer"]
@@ -118,7 +121,7 @@ def collect_gesture_dataframe():
 
 st.set_page_config(page_title="Air Gesture Prediction", layout="centered")
 st.title("✋ Air Gesture Prediction")
-
+api_url = st.text_input("Enter Phypox IP")
 # ---------- LOAD MODEL ----------
 @st.cache_resource
 def load_gesture_model():
@@ -145,7 +148,7 @@ def get_truncated_gesture_dataframe():
         time
     """
 
-    raw_data = fetch_phyphox_data()
+    raw_data = fetch_phyphox_data(api_url)
     df = parse_sensor_data(raw_data)
     df = add_time(df)
     gesture_df = trim_gesture(df)
