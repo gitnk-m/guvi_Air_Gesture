@@ -22,6 +22,9 @@ Z_DOWN_THRESHOLD = -7.0
 Z_UP_THRESHOLD = 7.0
 WINDOW_SIZE = 5            # consecutive samples
 
+MIN_LEN = 30      # discard tiny segments
+COOLDOWN = 10     # samples to ignore after a flip
+
 
 # ==============================
 # ExTRACT SERIES
@@ -105,6 +108,58 @@ def trim_gesture(df):
     return df.loc[start_idx:end_idx].reset_index(drop=True)
 
 
+def confirm_flip(signal, threshold, window, mode="down"):
+    if mode == "down":
+        cond = signal < threshold
+    else:
+        cond = signal > threshold
+
+    return cond.rolling(window).sum() >= window
+
+
+def split_on_flip(df):
+    acc_z = df["acc_z"]
+
+    down_confirm = confirm_flip(acc_z, Z_DOWN_THRESHOLD, WINDOW_SIZE, "down")
+    up_confirm   = confirm_flip(acc_z, Z_UP_THRESHOLD,   WINDOW_SIZE, "up")
+
+    segments = []
+    i = 0
+    n = len(df)
+
+    while i < n:
+        # find flip DOWN
+        if down_confirm.iloc[i]:
+            start = i
+
+            # cooldown after DOWN
+            j = i + COOLDOWN
+
+            # find flip UP
+            while j < n and not up_confirm.iloc[j]:
+                j += 1
+
+            if j >= n:
+                break  # no closing UP → discard tail
+
+            end = j
+
+            segment = df.iloc[start:end].reset_index(drop=True)
+
+            if len(segment) >= MIN_LEN:
+                segments.append(segment)
+
+            # move index past this gesture
+            i = end + COOLDOWN
+        else:
+            i += 1
+
+    if not segments:
+        raise ValueError("❌ No valid gestures detected")
+
+    return segments
+
+
 def collect_gesture_dataframe():
     """
     Collects sensor data from phyphox and returns a DataFrame
@@ -113,7 +168,8 @@ def collect_gesture_dataframe():
     raw_data = fetch_phyphox_data()
     df = parse_sensor_data(raw_data)
     df = add_time(df)
-    gesture_df = trim_gesture(df)
+    # gesture_df = trim_gesture(df)
+    gesture_df = split_on_flip(df)
     return gesture_df
 
 
@@ -151,7 +207,8 @@ def get_truncated_gesture_dataframe():
     raw_data = fetch_phyphox_data(api_url)
     df = parse_sensor_data(raw_data)
     df = add_time(df)
-    gesture_df = trim_gesture(df)
+    # gesture_df = trim_gesture(df)
+    gesture_df = split_on_flip(df)
     return gesture_df
 
     # ------------------------------
@@ -203,30 +260,49 @@ if st.button("🔮 Predict Gesture"):
             gesture_df = get_truncated_gesture_dataframe()
 
         # ---------- VALIDATION ----------
-        if gesture_df is None or not isinstance(gesture_df, pd.DataFrame):
-            st.error("Draw a Valid Gesture")
-            st.stop()
+        # if gesture_df is None or not isinstance(gesture_df, pd.DataFrame):
+        #     st.error("Draw a Valid Gesture")
+        #     st.stop()
 
-        if len(gesture_df) < 20:
-            st.error("Draw a Valid Gesture")
-            st.stop()
+        # if len(gesture_df) < 20:
+        #     st.error("Draw a Valid Gesture")
+        #     st.stop()
 
-        st.success("Gesture data received")
+        st.success("Gesture received")
 
-        # ---------- PREPROCESS ----------
-        processed = preprocess(gesture_df)
+        digits = []
+        confidences = []
+        for i, gdf in enumerate(gesture_df):
+            try:
+                processed = preprocess(gdf)
+                prediction = model.predict(processed)
+                predicted_digit = int(np.argmax(prediction))
+                confidence = float(np.max(prediction))
+                digits.append(predicted_digit)
+                confidences.append(confidence)
+                # print(f"✅ Predicted digit for gesture {i+1}: {predicted_digit} with confidence {confidence:.2f}")
+            except Exception as e:
+                st.error(f"Prediction failed for gesture {i+1}")
+                # st.exception(e)
+                continue
 
-        # ---------- MODEL ----------
-        prediction = model.predict(processed)
-        predicted_digit = int(np.argmax(prediction))
-        confidence = float(np.max(prediction))
+
+        # # ---------- PREPROCESS ----------
+        # processed = preprocess(gesture_df)
+
+        # # ---------- MODEL ----------
+        # prediction = model.predict(processed)
+        # predicted_digit = int(np.argmax(prediction))
+        # confidence = float(np.max(prediction))
 
         # ---------- OUTPUT ----------
-        if predicted_digit not in VALID_DIGITS or confidence < CONFIDENCE_THRESHOLD:
-            st.error("❌ Draw a Valid Gesture")
-        else:
-            st.success(f"✅ Predicted Digit: {predicted_digit}")
-            # st.metric("Confidence", f"{confidence * 100:.2f}%")
+        st.success(f"Digits Drawn are {''.join(map(str, digits))}")
+        # st.success("".join(map(str, digits)))
+        # if predicted_digit not in VALID_DIGITS or confidence < CONFIDENCE_THRESHOLD:
+        #     st.error("❌ Draw a Valid Gesture")
+        # else:
+        #     st.success(f"✅ Predicted Digit: {predicted_digit}")
+        #     # st.metric("Confidence", f"{confidence * 100:.2f}%")
 
     except Exception as e:
         st.error("Prediction failed")
